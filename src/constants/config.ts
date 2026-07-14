@@ -1,13 +1,20 @@
 import { Platform } from 'react-native';
 
-// Android emulator: 10.0.2.2 | iOS simulator: localhost | Physical device: your machine IP
+// ─── PRODUCTION: PythonAnywhere deployed API ───
+const PRODUCTION_API = 'https://digitalattendance.pythonanywhere.com/api';
+
+// Set to true when testing on a real phone with deployed backend
+const USE_PRODUCTION = true;
+
+// ─── LOCAL DEV (emulator / simulator) ───
 const DEV_HOST = Platform.select({
   android: '10.0.2.2',
   ios: 'localhost',
   default: 'localhost',
 });
+const DEV_API = `http://${DEV_HOST}:8000/api`;
 
-export const API_BASE_URL = `http://${DEV_HOST}:8000/api`;
+export const API_BASE_URL = USE_PRODUCTION ? PRODUCTION_API : DEV_API;
 
 export const STORAGE_KEYS = {
   ACCESS_TOKEN: 'access_token',
