@@ -13,6 +13,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Button } from '../../components/Button';
 import { Input } from '../../components/Input';
 import { useLoginMutation } from '../../api/baseApi';
+import { getApiErrorMessage } from '../../utils/apiError';
 import { useAppDispatch } from '../../store/hooks';
 import { setCredentials } from '../../store/slices/authSlice';
 import { saveTokens } from '../../services/storage';
@@ -62,7 +63,7 @@ export const LoginScreen: React.FC<Props> = ({ navigation }) => {
     } catch (err: any) {
       Alert.alert(
         'Login Failed',
-        err?.data?.detail || 'Invalid username or password',
+        getApiErrorMessage(err, 'Invalid username or password'),
       );
     }
   };

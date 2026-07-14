@@ -13,6 +13,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Button } from '../../components/Button';
 import { Input } from '../../components/Input';
 import { useSignupMutation } from '../../api/baseApi';
+import { getApiErrorMessage } from '../../utils/apiError';
 import { useTheme } from '../../theme/ThemeContext';
 import { AuthStackParamList } from '../../types';
 import { spacing, typography } from '../../theme';
@@ -60,11 +61,7 @@ export const SignupScreen: React.FC<Props> = ({ navigation }) => {
         { text: 'OK', onPress: () => navigation.navigate('Login') },
       ]);
     } catch (err: any) {
-      const msg =
-        err?.data?.username?.[0] ||
-        err?.data?.password_confirm?.[0] ||
-        'Signup failed';
-      Alert.alert('Error', msg);
+      Alert.alert('Signup Failed', getApiErrorMessage(err, 'Signup failed'));
     }
   };
 
