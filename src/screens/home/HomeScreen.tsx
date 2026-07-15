@@ -24,14 +24,19 @@ export const HomeScreen: React.FC = () => {
   const user = useAppSelector(s => s.auth.user);
   const today = format(new Date(), 'yyyy-MM-dd');
 
-  const { data: dashboard, refetch, isFetching } = useGetDashboardQuery({ date: today });
-  const { data: classrooms } = useGetClassroomsQuery();
+  const { data: dashboard, refetch: refetchDashboard, isFetching } = useGetDashboardQuery({ date: today });
+  const { data: classrooms, refetch: refetchClassrooms } = useGetClassroomsQuery();
+
+  const onRefresh = () => {
+    refetchDashboard();
+    refetchClassrooms();
+  };
 
   return (
     <ScrollView
       style={[styles.container, { backgroundColor: colors.background }]}
       refreshControl={
-        <RefreshControl refreshing={isFetching} onRefresh={refetch} tintColor={colors.primary} />
+        <RefreshControl refreshing={isFetching} onRefresh={onRefresh} tintColor={colors.primary} />
       }>
       <View style={styles.header}>
         <Text style={[styles.greeting, { color: colors.textSecondary }]}>
@@ -91,21 +96,28 @@ export const HomeScreen: React.FC = () => {
         Classrooms ({classrooms?.length ?? 0})
       </Text>
       <AddClassroomCard />
-      {dashboard?.classrooms?.map(cls => (
-        <Card key={cls.classroom_id} style={styles.classCard}>
-            <View style={styles.classRow}>
-              <Text style={[styles.className, { color: colors.text }]}>
-                {cls.classroom_name}
-              </Text>
-              <Text style={[styles.classPct, { color: colors.secondary }]}>
-                {cls.attendance_percentage}%
-              </Text>
-            </View>
-            <Text style={[styles.classSub, { color: colors.textMuted }]}>
-              {cls.present}/{cls.total_students} present today
+      {(classrooms || []).map(cls => (
+        <Card key={cls.id} style={styles.classCard}>
+          <View style={styles.classRow}>
+            <Text style={[styles.className, { color: colors.text }]}>
+              {cls.name}
             </Text>
-          </Card>
+            <Text style={[styles.classPct, { color: colors.secondary }]}>
+              {cls.student_count ?? 0} students
+            </Text>
+          </View>
+          <Text style={[styles.classSub, { color: colors.textMuted }]}>
+            Grade {cls.grade}
+            {cls.section ? `-${cls.section}` : ''} • {cls.academic_year}
+          </Text>
+        </Card>
       ))}
+
+      {(!classrooms || classrooms.length === 0) && (
+        <Text style={[styles.classSub, { color: colors.textMuted, marginHorizontal: spacing.lg }]}>
+          No classrooms yet. Tap "+ Add Classroom" above.
+        </Text>
+      )}
 
       <Card style={StyleSheet.flatten([styles.tipCard, { backgroundColor: colors.successBg }])}>
         <Text style={[styles.tipTitle, { color: colors.secondary }]}>💡 Daily Tip</Text>
