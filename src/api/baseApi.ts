@@ -108,6 +108,8 @@ export const api = createApi({
     // Schools
     getSchools: builder.query<School[], void>({
       query: () => '/schools/',
+      transformResponse: (response: School[] | { results: School[] }) =>
+        Array.isArray(response) ? response : response.results || [],
       providesTags: ['School'],
     }),
     createSchool: builder.mutation<School, Partial<School>>({
@@ -122,9 +124,14 @@ export const api = createApi({
     // Classrooms
     getClassrooms: builder.query<ClassRoom[], void>({
       query: () => '/schools/classrooms/',
+      transformResponse: (response: ClassRoom[] | { results: ClassRoom[] }) =>
+        Array.isArray(response) ? response : response.results || [],
       providesTags: ['Classroom'],
     }),
-    createClassroom: builder.mutation<ClassRoom, Partial<ClassRoom>>({
+    createClassroom: builder.mutation<
+      ClassRoom,
+      { name: string; grade: string; section?: string; academic_year: string }
+    >({
       query: body => ({ url: '/schools/classrooms/', method: 'POST', body }),
       invalidatesTags: ['Classroom', 'School'],
     }),
