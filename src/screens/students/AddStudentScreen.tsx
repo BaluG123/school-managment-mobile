@@ -34,7 +34,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'AddStudent'>;
 const PHOTO_OPTIONS: CameraOptions & ImageLibraryOptions = {
   mediaType: 'photo',
   cameraType: 'front',
-  quality: 0.85,
+  quality: 0.8 as const,
   maxWidth: 800,
   maxHeight: 800,
   includeBase64: false,

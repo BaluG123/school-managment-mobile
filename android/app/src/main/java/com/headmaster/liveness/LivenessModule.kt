@@ -88,17 +88,32 @@ class LivenessModule(private val reactContext: ReactApplicationContext) :
 
                 for (i in 1 until avgOpen.size) {
                     val drop = avgOpen[i - 1] - avgOpen[i]
-                    if (drop > 0.3f && avgOpen[i] < 0.4f) {
+                    // Soft blink threshold — works with lighting lag on phones
+                    if (drop > 0.12f && avgOpen[i] < 0.6f) {
+                        blinkDetected = true
+                        break
+                    }
+                    // open after closed
+                    val rise = avgOpen[i] - avgOpen[i - 1]
+                    if (rise > 0.12f && avgOpen[i - 1] < 0.55f) {
                         blinkDetected = true
                         break
                     }
                 }
 
-                // Also check eyes closed then open pattern
+                // Eyes closed then open range pattern
                 if (!blinkDetected) {
                     val minVal = avgOpen.minOrNull() ?: 1f
                     val maxVal = avgOpen.maxOrNull() ?: 0f
-                    if (maxVal - minVal > 0.35f && minVal < 0.35f) {
+                    if (maxVal - minVal > 0.15f && minVal < 0.55f) {
+                        blinkDetected = true
+                    }
+                }
+
+                // Soft fallback: face across frames + mild eye variation (slow blinks)
+                if (!blinkDetected && eyeStates.size >= 4) {
+                    val variation = (avgOpen.maxOrNull() ?: 0f) - (avgOpen.minOrNull() ?: 0f)
+                    if (variation > 0.08f) {
                         blinkDetected = true
                     }
                 }
