@@ -70,11 +70,17 @@ export const AttendanceScreen: React.FC = () => {
                 {item.name}
               </Text>
               <Text style={[styles.classInfo, { color: colors.textSecondary }]}>
-                Grade {item.grade} • {item.student_count} students
+                Grade {item.grade} • {item.student_count ?? 0} students
               </Text>
-              <Text style={[styles.startBtn, { color: colors.primary }]}>
-                Start Attendance →
-              </Text>
+              {(item.student_count ?? 0) === 0 ? (
+                <Text style={[styles.warn, { color: colors.warning }]}>
+                  Add students with face photos before attendance
+                </Text>
+              ) : (
+                <Text style={[styles.startBtn, { color: colors.primary }]}>
+                  Start Attendance →
+                </Text>
+              )}
             </Card>
           </TouchableOpacity>
         )}
@@ -95,4 +101,5 @@ const styles = StyleSheet.create({
   className: { ...typography.h3 },
   classInfo: { ...typography.caption, marginTop: 4 },
   startBtn: { ...typography.bodyBold, marginTop: spacing.sm },
+  warn: { ...typography.caption, marginTop: spacing.sm, fontWeight: '600' },
 });

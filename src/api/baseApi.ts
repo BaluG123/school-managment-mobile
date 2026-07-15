@@ -163,7 +163,7 @@ export const api = createApi({
         method: 'POST',
         body: formData,
       }),
-      invalidatesTags: ['Student', 'School', 'Dashboard'],
+      invalidatesTags: ['Student', 'School', 'Classroom', 'Dashboard'],
     }),
     updateStudent: builder.mutation<Student, { id: number; data: FormData | Partial<Student> }>({
       query: ({ id, data }) => ({
@@ -171,16 +171,39 @@ export const api = createApi({
         method: 'PATCH',
         body: data,
       }),
-      invalidatesTags: ['Student'],
+      invalidatesTags: ['Student', 'Classroom'],
     }),
     getFacePhotos: builder.query<
-      Array<{ id: number; full_name: string; roll_number: string; face_photo: string }>,
+      {
+        classroom: string | number;
+        count: number;
+        with_photos: number;
+        students: Array<{
+          id: number;
+          full_name: string;
+          roll_number: string;
+          face_photo: string | null;
+          has_face_photo: boolean;
+        }>;
+      },
       number
     >({
       query: classroomId => ({
         url: '/students/face-photos/',
         params: { classroom: classroomId },
       }),
+      // Support old array responses and new wrapped response
+      transformResponse: (response: any) => {
+        if (Array.isArray(response)) {
+          return {
+            classroom: 0,
+            count: response.length,
+            with_photos: response.filter((s: any) => s.face_photo).length,
+            students: response,
+          };
+        }
+        return response;
+      },
     }),
 
     // Attendance
@@ -194,6 +217,23 @@ export const api = createApi({
         body: formData,
       }),
       invalidatesTags: ['Attendance', 'Dashboard'],
+    }),
+    matchAndMarkAttendance: builder.mutation<
+      {
+        message: string;
+        matched: boolean;
+        confidence: number;
+        student: { id: number; full_name: string; roll_number: string };
+        attendance: Attendance;
+      },
+      FormData
+    >({
+      query: formData => ({
+        url: '/attendance/match/',
+        method: 'POST',
+        body: formData,
+      }),
+      invalidatesTags: ['Attendance', 'Dashboard', 'Classroom'],
     }),
     getAttendance: builder.query<
       Attendance[],
@@ -254,6 +294,7 @@ export const {
   useUpdateStudentMutation,
   useGetFacePhotosQuery,
   useMarkAttendanceMutation,
+  useMatchAndMarkAttendanceMutation,
   useGetAttendanceQuery,
   useGetClassReportQuery,
   useGetStudentReportQuery,

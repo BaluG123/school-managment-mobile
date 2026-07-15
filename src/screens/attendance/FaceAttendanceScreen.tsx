@@ -12,10 +12,13 @@ import {
   useCameraPermission,
 } from 'react-native-vision-camera';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useGetFacePhotosQuery, useMarkAttendanceMutation } from '../../api/baseApi';
+import {
+  useGetFacePhotosQuery,
+  useMatchAndMarkAttendanceMutation,
+} from '../../api/baseApi';
 import LivenessModule from '../../native/LivenessModule';
-import { matchFaceWithReferences, validateCapturedFace } from '../../services/faceMatch';
 import { LoadingOverlay } from '../../components/EmptyState';
+import { getApiErrorMessage } from '../../utils/apiError';
 import { useTheme } from '../../theme/ThemeContext';
 import { RootStackParamList } from '../../types';
 import { borderRadius, spacing, typography } from '../../theme';
@@ -32,10 +35,14 @@ export const FaceAttendanceScreen: React.FC<Props> = ({ navigation, route }) => 
 
   const [step, setStep] = useState<Step>('ready');
   const [instruction, setInstruction] = useState('Position your face in the oval');
-  const [framePaths, setFramePaths] = useState<string[]>([]);
 
-  const { data: references, isLoading: loadingRefs } = useGetFacePhotosQuery(classroomId);
-  const [markAttendance] = useMarkAttendanceMutation();
+  const { data: faceData, isLoading: loadingRefs, refetch } = useGetFacePhotosQuery(
+    classroomId,
+  );
+  const [matchAndMark] = useMatchAndMarkAttendanceMutation();
+
+  const withPhotos = faceData?.with_photos ?? 0;
+  const studentCount = faceData?.count ?? 0;
 
   useEffect(() => {
     if (!hasPermission) requestPermission();
@@ -51,6 +58,16 @@ export const FaceAttendanceScreen: React.FC<Props> = ({ navigation, route }) => 
   }, []);
 
   const startLivenessCheck = async () => {
+    if (withPhotos === 0) {
+      Alert.alert(
+        'No Face Photos',
+        studentCount === 0
+          ? 'This classroom has no students. Register students with a face photo first.'
+          : 'Students exist but have no face photos. Edit each student and upload a face photo.',
+      );
+      return;
+    }
+
     setStep('blink');
     setInstruction('Blink your eyes naturally...');
     const frames: string[] = [];
@@ -61,7 +78,6 @@ export const FaceAttendanceScreen: React.FC<Props> = ({ navigation, route }) => 
       if (path) frames.push(path);
     }
 
-    setFramePaths(frames);
     setStep('capturing');
 
     try {
@@ -73,10 +89,17 @@ export const FaceAttendanceScreen: React.FC<Props> = ({ navigation, route }) => 
         return;
       }
 
-      setInstruction('Verifying identity...');
+      setInstruction('Matching face on server...');
       setStep('matching');
 
       const lastFrame = frames[frames.length - 1];
+      if (!lastFrame) {
+        Alert.alert('Capture Failed', 'Could not capture photo. Try again.', [
+          { text: 'Retry', onPress: () => setStep('ready') },
+        ]);
+        return;
+      }
+
       const quality = await LivenessModule.validateFaceQuality(lastFrame);
       if (!quality.valid) {
         Alert.alert('Face Quality', quality.message, [
@@ -85,56 +108,34 @@ export const FaceAttendanceScreen: React.FC<Props> = ({ navigation, route }) => 
         return;
       }
 
-      const faceCheck = await validateCapturedFace(lastFrame);
-      if (!faceCheck.valid) {
-        Alert.alert('Face Error', faceCheck.message, [
-          { text: 'Retry', onPress: () => setStep('ready') },
-        ]);
-        return;
-      }
-
-      const match = await matchFaceWithReferences(
-        lastFrame,
-        references || [],
-      );
-
-      if (!match.matched || !match.studentId) {
-        Alert.alert(
-          'No Match Found',
-          `Could not match face (confidence: ${match.confidence}%). Make sure the student is registered in this class.`,
-          [{ text: 'Try Again', onPress: () => setStep('ready') }],
-        );
-        return;
-      }
-
       const fd = new FormData();
-      fd.append('student_id', String(match.studentId));
+      fd.append('classroom_id', String(classroomId));
       fd.append('status', 'present');
-      fd.append('face_match_confidence', String(match.confidence));
       fd.append('capture_photo', {
         uri: lastFrame,
         type: 'image/jpeg',
         name: 'capture.jpg',
       } as any);
 
-      const result = await markAttendance(fd).unwrap();
-      const checkInTime = result.attendance.check_in_time;
+      const result = await matchAndMark(fd).unwrap();
 
       navigation.replace('AttendanceSuccess', {
-        studentName: match.studentName!,
-        rollNumber: match.rollNumber!,
-        checkInTime,
-        confidence: match.confidence,
+        studentName: result.student.full_name,
+        rollNumber: result.student.roll_number,
+        checkInTime: result.attendance.check_in_time,
+        confidence: result.confidence,
       });
     } catch (err: any) {
-      Alert.alert('Error', err?.data?.detail || err?.message || 'Attendance failed', [
-        { text: 'Retry', onPress: () => setStep('ready') },
-      ]);
+      Alert.alert(
+        'Attendance Failed',
+        getApiErrorMessage(err, 'Could not match face. Try again.'),
+        [{ text: 'Retry', onPress: () => setStep('ready') }],
+      );
     }
   };
 
   if (!device || loadingRefs) {
-    return <LoadingOverlay message="Preparing camera..." />;
+    return <LoadingOverlay message="Loading classroom faces..." />;
   }
 
   if (!hasPermission) {
@@ -144,7 +145,9 @@ export const FaceAttendanceScreen: React.FC<Props> = ({ navigation, route }) => 
           Camera permission is required for face attendance
         </Text>
         <TouchableOpacity onPress={requestPermission}>
-          <Text style={{ color: colors.primary, fontWeight: '700' }}>Grant Permission</Text>
+          <Text style={{ color: colors.primary, fontWeight: '700' }}>
+            Grant Permission
+          </Text>
         </TouchableOpacity>
       </View>
     );
@@ -161,24 +164,53 @@ export const FaceAttendanceScreen: React.FC<Props> = ({ navigation, route }) => 
 
       <View style={styles.overlay}>
         <Text style={styles.classLabel}>{classroomName}</Text>
+        <Text style={styles.refCount}>
+          {withPhotos} face photo{withPhotos === 1 ? '' : 's'} ready
+          {studentCount > withPhotos
+            ? ` (${studentCount - withPhotos} missing photo)`
+            : ''}
+        </Text>
+
         <View style={styles.faceOval} />
         <Text style={styles.instruction}>{instruction}</Text>
 
         {step === 'ready' && (
-          <TouchableOpacity style={[styles.startBtn, { backgroundColor: colors.phonePeGreen }]} onPress={startLivenessCheck}>
-            <Text style={styles.startText}>Start Face Scan</Text>
-          </TouchableOpacity>
+          <>
+            <TouchableOpacity
+              style={[
+                styles.startBtn,
+                {
+                  backgroundColor:
+                    withPhotos > 0 ? colors.phonePeGreen : '#64748B',
+                },
+              ]}
+              onPress={startLivenessCheck}
+              disabled={withPhotos === 0}>
+              <Text style={styles.startText}>
+                {withPhotos > 0 ? 'Start Face Scan' : 'No Photos to Match'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => refetch()} style={styles.refreshBtn}>
+              <Text style={styles.cancelText}>Refresh face list</Text>
+            </TouchableOpacity>
+          </>
         )}
 
         {(step === 'blink' || step === 'capturing' || step === 'matching') && (
           <View style={styles.processingBox}>
             <Text style={styles.processingText}>
-              {step === 'blink' ? '👁️ Blink now...' : step === 'matching' ? '🔍 Matching face...' : '⏳ Processing...'}
+              {step === 'blink'
+                ? '👁️ Blink now...'
+                : step === 'matching'
+                  ? '🔍 Matching face...'
+                  : '⏳ Processing...'}
             </Text>
           </View>
         )}
 
-        <TouchableOpacity style={styles.cancelBtn} onPress={() => navigation.goBack()}>
+        <TouchableOpacity
+          style={styles.cancelBtn}
+          onPress={() => navigation.goBack()}>
           <Text style={styles.cancelText}>Cancel</Text>
         </TouchableOpacity>
       </View>
@@ -188,16 +220,78 @@ export const FaceAttendanceScreen: React.FC<Props> = ({ navigation, route }) => 
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl },
-  permText: { ...typography.body, textAlign: 'center', marginBottom: spacing.md },
-  overlay: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center' },
-  classLabel: { position: 'absolute', top: 60, color: '#FFF', ...typography.h3, backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: borderRadius.full },
-  faceOval: { width: 260, height: 320, borderRadius: 130, borderWidth: 3, borderColor: '#00BFA5', borderStyle: 'dashed', backgroundColor: 'transparent' },
-  instruction: { color: '#FFF', ...typography.bodyBold, marginTop: spacing.lg, textAlign: 'center', backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderRadius: borderRadius.md },
-  startBtn: { position: 'absolute', bottom: 120, paddingHorizontal: spacing.xl, paddingVertical: spacing.md, borderRadius: borderRadius.full },
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.xl,
+  },
+  permText: {
+    ...typography.body,
+    textAlign: 'center',
+    marginBottom: spacing.md,
+  },
+  overlay: {
+    ...StyleSheet.absoluteFill,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  classLabel: {
+    position: 'absolute',
+    top: 60,
+    color: '#FFF',
+    ...typography.h3,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.full,
+  },
+  refCount: {
+    position: 'absolute',
+    top: 110,
+    color: '#FFF',
+    ...typography.caption,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    paddingHorizontal: spacing.md,
+    paddingVertical: 4,
+    borderRadius: borderRadius.full,
+  },
+  faceOval: {
+    width: 260,
+    height: 320,
+    borderRadius: 130,
+    borderWidth: 3,
+    borderColor: '#00BFA5',
+    borderStyle: 'dashed',
+    backgroundColor: 'transparent',
+  },
+  instruction: {
+    color: '#FFF',
+    ...typography.bodyBold,
+    marginTop: spacing.lg,
+    textAlign: 'center',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md,
+  },
+  startBtn: {
+    position: 'absolute',
+    bottom: 120,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.full,
+  },
   startText: { color: '#FFF', ...typography.bodyBold, fontSize: 18 },
-  processingBox: { position: 'absolute', bottom: 120, backgroundColor: 'rgba(0,0,0,0.7)', padding: spacing.lg, borderRadius: borderRadius.lg },
+  processingBox: {
+    position: 'absolute',
+    bottom: 120,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    padding: spacing.lg,
+    borderRadius: borderRadius.lg,
+  },
   processingText: { color: '#FFF', ...typography.h3 },
   cancelBtn: { position: 'absolute', bottom: 50 },
+  refreshBtn: { position: 'absolute', bottom: 175 },
   cancelText: { color: 'rgba(255,255,255,0.7)', ...typography.body },
 });
